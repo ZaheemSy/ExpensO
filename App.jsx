@@ -16,6 +16,8 @@ import Splashscreen from './src/screens/Splashscreen/Splashscreen';
 import Landingscreen from './src/screens/Landing/Landingscreen';
 import Signup from './src/screens/SignUp/Signup';
 import Home from './src/screens/Home/Home';
+import Expenso from './src/screens/Expenso/Expenso';
+import Debt from './src/screens/Debt/Debt';
 
 const Stack = createStackNavigator();
 
@@ -53,6 +55,8 @@ function App() {
           <Stack.Screen name="Landing" component={Landingscreen} />
           <Stack.Screen name="Signup" component={Signup} />
           <Stack.Screen name="Home" component={Home} />
+           <Stack.Screen name="Expenso" component={Expenso} />
+            <Stack.Screen name="Debt" component={Debt} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

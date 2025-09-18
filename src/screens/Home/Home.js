@@ -1,9 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Button1 from '../../components/Buttons/Button1';
 
 const Home = ({ navigation }) => {
   const handleLogout = () => {
     navigation.navigate('Landing');
+  };
+
+  const handleExpensoPress = () => {
+    navigation.navigate('Expenso');
+  };
+
+  const handleDebtPress = () => {
+    navigation.navigate('Debt');
   };
 
   return (
@@ -18,6 +27,19 @@ const Home = ({ navigation }) => {
       <View style={styles.content}>
         <Text style={styles.welcomeText}>Welcome to your expense tracker!</Text>
         <Text style={styles.subtitle}>Start managing your expenses efficiently</Text>
+
+        <View style={styles.buttonContainer}>
+          <Button1
+            title="Expenso"
+            onPress={handleExpensoPress}
+            style={styles.navButton}
+          />
+          <Button1
+            title="Debt"
+            onPress={handleDebtPress}
+            style={[styles.navButton, styles.debtButton]}
+          />
+        </View>
       </View>
     </View>
   );
@@ -75,6 +97,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
+  },
+  buttonContainer: {
+    marginTop: 40,
+    width: '100%',
+    paddingHorizontal: 20,
+  },
+  navButton: {
+    width: '100%',
+    marginVertical: 8,
+  },
+  debtButton: {
+    backgroundColor: '#28a745',
   },
 });
 
