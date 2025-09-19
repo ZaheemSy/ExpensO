@@ -9,7 +9,13 @@
       "Bash(npm uninstall:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(npm run clean:*)",
+      "Bash(npx react-native:*)",
+      "Read(//c/Users/zahee/OneDrive/Pictures/Screenshots/**)",
+      "Bash(./gradlew:*)",
+      "Bash(gradlew.bat app:installDebug:*)",
+      "Bash(\"./gradlew.bat\" app:installDebug)"
     ],
     "deny": [],
     "ask": []

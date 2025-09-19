@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import authService from '../services/authService';
+import firebaseEmailService from '../services/firebaseEmailService';
+import { auth } from '../config/firebase';
 
 const AuthContext = createContext({});
 
@@ -18,17 +19,34 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuthStatus();
+    // Listen for Firebase auth state changes
+    const unsubscribe = auth().onAuthStateChanged((user) => {
+      if (user && user.emailVerified) {
+        setIsAuthenticated(true);
+        setUserEmail(user.email);
+      } else {
+        setIsAuthenticated(false);
+        setUserEmail(null);
+      }
+      setIsLoading(false);
+    });
+
+    // Cleanup subscription on unmount
+    return unsubscribe;
   }, []);
 
   const checkAuthStatus = async () => {
     try {
       setIsLoading(true);
-      const authStatus = await authService.isAuthenticated();
-      const email = await AsyncStorage.getItem('user_email');
+      const currentUser = auth().currentUser;
 
-      setIsAuthenticated(authStatus && !!email);
-      setUserEmail(email);
+      if (currentUser && currentUser.emailVerified) {
+        setIsAuthenticated(true);
+        setUserEmail(currentUser.email);
+      } else {
+        setIsAuthenticated(false);
+        setUserEmail(null);
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
       setIsAuthenticated(false);
@@ -38,22 +56,43 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email) => {
+  const login = async (email, password) => {
     try {
-      await AsyncStorage.setItem('user_email', email);
-      await AsyncStorage.setItem('auth_token', 'demo_token_' + Date.now());
-      setUserEmail(email);
-      setIsAuthenticated(true);
-      return { success: true };
+      // Use Firebase authentication
+      const result = await firebaseEmailService.signInWithEmail(email, password);
+
+      if (result.success) {
+        setUserEmail(result.user.email);
+        setIsAuthenticated(true);
+        return { success: true };
+      } else {
+        return { success: false, error: result.error };
+      }
     } catch (error) {
       console.error('Error during login:', error);
       return { success: false, error: error.message };
     }
   };
 
+  const loginWithGoogle = async () => {
+    try {
+      const result = await authService.signInWithGoogle();
+      if (result.success) {
+        setUserEmail(result.userInfo.user.email);
+        setIsAuthenticated(true);
+        return { success: true, userInfo: result.userInfo };
+      } else {
+        return { success: false, error: result.message };
+      }
+    } catch (error) {
+      console.error('Error during Google login:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const logout = async () => {
     try {
-      await authService.logout();
+      await firebaseEmailService.signOut();
       setIsAuthenticated(false);
       setUserEmail(null);
       return { success: true };
@@ -72,6 +111,7 @@ export const AuthProvider = ({ children }) => {
     userEmail,
     isLoading,
     login,
+    loginWithGoogle,
     logout,
     refreshAuth
   };

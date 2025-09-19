@@ -13,13 +13,19 @@ const Landingscreen = ({ navigation }) => {
       return;
     }
 
-    const result = await login(email);
+    if (!password.trim()) {
+      Alert.alert('Error', 'Please enter your password');
+      return;
+    }
+
+    const result = await login(email, password);
     if (result.success) {
       // Navigation will be handled automatically by the auth state change
     } else {
       Alert.alert('Error', result.error || 'Login failed');
     }
   };
+
 
   const handleSignup = () => {
     navigation.navigate('Signup');
