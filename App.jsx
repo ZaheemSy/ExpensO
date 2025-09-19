@@ -12,6 +12,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import 'react-native-gesture-handler';
 
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import Splashscreen from './src/screens/Splashscreen/Splashscreen';
 import Landingscreen from './src/screens/Landing/Landingscreen';
 import Signup from './src/screens/SignUp/Signup';
@@ -21,7 +22,8 @@ import Debt from './src/screens/Debt/Debt';
 
 const Stack = createStackNavigator();
 
-function App() {
+const AppNavigator = () => {
+  const { isAuthenticated, isLoading } = useAuth();
   const isDarkMode = useColorScheme() === 'dark';
   const [showSplash, setShowSplash] = useState(true);
 
@@ -33,7 +35,7 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (showSplash) {
+  if (showSplash || isLoading) {
     return (
       <SafeAreaProvider>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
@@ -47,19 +49,34 @@ function App() {
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <NavigationContainer>
         <Stack.Navigator
-          initialRouteName="Landing"
+          initialRouteName={isAuthenticated ? "Home" : "Landing"}
           screenOptions={{
             headerShown: false,
           }}
         >
-          <Stack.Screen name="Landing" component={Landingscreen} />
-          <Stack.Screen name="Signup" component={Signup} />
-          <Stack.Screen name="Home" component={Home} />
-           <Stack.Screen name="Expenso" component={Expenso} />
-            <Stack.Screen name="Debt" component={Debt} />
+          {isAuthenticated ? (
+            <>
+              <Stack.Screen name="Home" component={Home} />
+              <Stack.Screen name="Expenso" component={Expenso} />
+              <Stack.Screen name="Debt" component={Debt} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Landing" component={Landingscreen} />
+              <Stack.Screen name="Signup" component={Signup} />
+            </>
+          )}
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppNavigator />
+    </AuthProvider>
   );
 }
 

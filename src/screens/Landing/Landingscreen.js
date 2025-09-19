@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 
 const Landingscreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const { login } = useAuth();
 
-  const handleLogin = () => {
-    navigation.navigate('Home');
+  const handleLogin = async () => {
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+
+    const result = await login(email);
+    if (result.success) {
+      // Navigation will be handled automatically by the auth state change
+    } else {
+      Alert.alert('Error', result.error || 'Login failed');
+    }
   };
 
   const handleSignup = () => {

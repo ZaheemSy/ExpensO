@@ -1,10 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import Button1 from '../../components/Buttons/Button1';
+import { useAuth } from '../../context/AuthContext';
 
 const Home = ({ navigation }) => {
-  const handleLogout = () => {
-    navigation.navigate('Landing');
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    const result = await logout();
+    if (!result.success) {
+      Alert.alert('Error', result.error || 'Logout failed');
+    }
+    // Navigation will be handled automatically by the auth state change
   };
 
   const handleExpensoPress = () => {
