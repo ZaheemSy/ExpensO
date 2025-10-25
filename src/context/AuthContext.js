@@ -106,6 +106,17 @@ export const AuthProvider = ({ children }) => {
     await checkAuthStatus();
   };
 
+  const sendPasswordResetEmail = async (email) => {
+    try {
+      await auth().sendPasswordResetEmail(email);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending password reset email:', error);
+      // Return the error message from Firebase
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     isAuthenticated,
     userEmail,
@@ -113,7 +124,8 @@ export const AuthProvider = ({ children }) => {
     login,
     loginWithGoogle,
     logout,
-    refreshAuth
+    refreshAuth,
+    sendPasswordResetEmail, // Expose the new function
   };
 
   return (

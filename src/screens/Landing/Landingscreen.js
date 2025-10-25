@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 
 const Landingscreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
   const handleLogin = async () => {
@@ -18,17 +19,28 @@ const Landingscreen = ({ navigation }) => {
       return;
     }
 
-    const result = await login(email, password);
-    if (result.success) {
-      // Navigation will be handled automatically by the auth state change
-    } else {
-      Alert.alert('Error', result.error || 'Login failed');
+    setIsLoading(true);
+    try {
+      const result = await login(email, password);
+      if (!result.success) {
+        Alert.alert('Error', result.error || 'Login failed');
+      }
+      // On success, navigation is handled by the AuthContext state change.
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert('Error', 'An unexpected error occurred during login.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
 
   const handleSignup = () => {
     navigation.navigate('Signup');
+  };
+
+  const handleForgotPassword = () => {
+    navigation.navigate('ForgotPassword');
   };
 
   return (
@@ -43,6 +55,7 @@ const Landingscreen = ({ navigation }) => {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          editable={!isLoading}
         />
 
         <TextInput
@@ -51,14 +64,27 @@ const Landingscreen = ({ navigation }) => {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          editable={!isLoading}
         />
       </View>
 
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>Login</Text>
+      <TouchableOpacity
+        style={[styles.loginButton, isLoading && styles.disabledButton]}
+        onPress={handleLogin}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.loginButtonText}>Login</Text>
+        )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={handleSignup}>
+      <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
+        <Text style={styles.forgotPasswordLink}>Forgot Password?</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={handleSignup} disabled={isLoading}>
         <Text style={styles.signupLink}>Don't have an account? Sign up</Text>
       </TouchableOpacity>
     </View>
@@ -107,9 +133,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  disabledButton: {
+    backgroundColor: '#cccccc',
+  },
   signupLink: {
     color: '#007bff',
     fontSize: 16,
+    textDecorationLine: 'underline',
+  },
+  forgotPasswordLink: {
+    color: '#6c757d',
+    fontSize: 16,
+    marginBottom: 20,
     textDecorationLine: 'underline',
   },
 });

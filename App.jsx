@@ -19,6 +19,8 @@ import Signup from './src/screens/SignUp/Signup';
 import Home from './src/screens/Home/Home';
 import Expenso from './src/screens/Expenso/Expenso';
 import Debt from './src/screens/Debt/Debt';
+import ForgotPasswordScreen from './src/screens/Landing/ForgotPasswordScreen';
+
 
 const Stack = createStackNavigator();
 
@@ -64,6 +66,7 @@ const AppNavigator = () => {
             <>
               <Stack.Screen name="Landing" component={Landingscreen} />
               <Stack.Screen name="Signup" component={Signup} />
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             </>
           )}
         </Stack.Navigator>
