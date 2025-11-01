@@ -9,12 +9,12 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
 
 const ForgotPasswordScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // Assuming your AuthContext provides a password reset function
   const { sendPasswordResetEmail } = useAuth();
 
   const handleResetPassword = async () => {
@@ -25,22 +25,24 @@ const ForgotPasswordScreen = ({ navigation }) => {
 
     setIsLoading(true);
     try {
-      // This function should be implemented in your AuthContext
-      // It will call your backend (e.g., Firebase) to send the email.
       const result = await sendPasswordResetEmail(email);
 
       if (result.success) {
         Alert.alert(
           'Password Reset Email Sent',
           'If an account exists for this email, a password reset link has been sent. Please check your inbox.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
+          [{ text: 'OK', onPress: () => navigation.goBack() }],
         );
       } else {
         throw new Error(result.error || 'An unknown error occurred.');
       }
     } catch (error) {
       console.error('Password reset error:', error);
-      Alert.alert('Error', error.message || 'Failed to send password reset email. Please try again.');
+      Alert.alert(
+        'Error',
+        error.message ||
+          'Failed to send password reset email. Please try again.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -49,9 +51,19 @@ const ForgotPasswordScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
+        {/* Back Icon */}
+        <TouchableOpacity
+          style={styles.backIconContainer}
+          onPress={() => navigation.goBack()}
+          disabled={isLoading}
+        >
+          <Ionicons name="arrow-back" size={26} color="#007bff" />
+        </TouchableOpacity>
+
         <Text style={styles.title}>Forgot Password?</Text>
         <Text style={styles.subtitle}>
-          Enter your registered email address below. We'll send you a link to reset your password.
+          Enter your registered email address below. We'll send you a link to
+          reset your password.
         </Text>
 
         <TextInput
@@ -107,11 +119,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     alignItems: 'center',
+    position: 'relative',
+  },
+  backIconContainer: {
+    position: 'absolute',
+    top: 15,
+    left: 15,
+    zIndex: 1,
+    padding: 5,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333333',
+    marginTop: 10,
     marginBottom: 15,
   },
   subtitle: {
@@ -140,10 +161,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
-  buttonText: { color: '#ffffff', fontSize: 17, fontWeight: 'bold' },
-  disabledButton: { backgroundColor: '#cccccc' },
-  backToLoginButton: { marginTop: 10 },
-  backToLoginText: { color: '#007bff', fontSize: 16 },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    backgroundColor: '#cccccc',
+  },
+  backToLoginButton: {
+    marginTop: 10,
+  },
+  backToLoginText: {
+    color: '#007bff',
+    fontSize: 16,
+  },
 });
 
 export default ForgotPasswordScreen;
