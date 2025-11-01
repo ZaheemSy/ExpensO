@@ -1,0 +1,55 @@
+{
+  "name": "vscode-run-button",
+  "displayName": "Run Button",
+  "publisher": "local",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "main": "extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:runButton.runCommand"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "runButton.runCommand",
+        "title": "Run Android",
+        "category": "Run Button"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "runButton.runCommand",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "Run Button",
+      "properties": {
+        "runButton.command": {
+          "type": "string",
+          "default": "npm run android",
+          "description": "The command to run when the button is clicked."
+        },
+        "runButton.label": {
+          "type": "string",
+          "default": "Run Android",
+          "description": "Label shown next to the status bar icon."
+        },
+        "runButton.terminalName": {
+          "type": "string",
+          "default": "Run Button",
+          "description": "Terminal name created/used by the extension."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prepublish": "node ./node_modules/vscode/bin/install"
+  }
+}

@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from 'react-native';
 import authService from '../../services/authService';
 import firebaseEmailService from '../../services/firebaseEmailService';
 
@@ -11,7 +18,6 @@ const Signup = ({ navigation }) => {
   const [isVerificationSent, setIsVerificationSent] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [userEmail, setUserEmail] = useState('');
-
 
   const handleSignup = async () => {
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
@@ -30,7 +36,10 @@ const Signup = ({ navigation }) => {
     }
 
     // Send verification code
-    const result = await firebaseEmailService.sendVerificationEmail(email, password);
+    const result = await firebaseEmailService.sendVerificationEmail(
+      email,
+      password,
+    );
     if (result.success) {
       setUserEmail(email);
       setIsVerificationSent(true);
@@ -44,32 +53,35 @@ const Signup = ({ navigation }) => {
     setIsVerifying(true);
 
     // Check if email has been verified
-    const verifyResult = await firebaseEmailService.checkEmailVerification(userEmail);
+    const verifyResult = await firebaseEmailService.checkEmailVerification(
+      userEmail,
+    );
     setIsVerifying(false);
 
     if (verifyResult.success) {
       Alert.alert('Success', 'Email verified! You can now login.', [
-        { text: 'OK', onPress: () => navigation.navigate('Landing') }
+        { text: 'OK', onPress: () => navigation.navigate('LoginScreen') },
       ]);
     } else {
       Alert.alert('Verification Status', verifyResult.error, [
         { text: 'Try Again', onPress: () => {} },
-        { text: 'Resend Email', onPress: handleResendEmail }
+        { text: 'Resend Email', onPress: handleResendEmail },
       ]);
     }
   };
 
   const handleResendEmail = async () => {
-    const result = await firebaseEmailService.resendVerificationEmail(userEmail);
+    const result = await firebaseEmailService.resendVerificationEmail(
+      userEmail,
+    );
     Alert.alert(
       result.success ? 'Email Sent' : 'Error',
-      result.message || result.error
+      result.message || result.error,
     );
   };
 
-
   const handleLogin = () => {
-    navigation.navigate('Landing');
+    navigation.navigate('LoginScreen');
   };
 
   return (
@@ -108,7 +120,6 @@ const Signup = ({ navigation }) => {
           <TouchableOpacity style={styles.signupButton} onPress={handleSignup}>
             <Text style={styles.signupButtonText}>Send Verification Code</Text>
           </TouchableOpacity>
-
         </>
       ) : (
         <>
@@ -117,7 +128,8 @@ const Signup = ({ navigation }) => {
           </Text>
 
           <Text style={styles.instructionText}>
-            Please check your email and click the verification link, then tap "Check Verification" below.
+            Please check your email and click the verification link, then tap
+            "Check Verification" below.
           </Text>
 
           <TouchableOpacity
@@ -130,7 +142,10 @@ const Signup = ({ navigation }) => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleResendEmail} style={styles.resendButton}>
+          <TouchableOpacity
+            onPress={handleResendEmail}
+            style={styles.resendButton}
+          >
             <Text style={styles.linkText}>Resend verification email</Text>
           </TouchableOpacity>
 
