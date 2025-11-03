@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   Image,
@@ -18,6 +17,8 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
 import masterLogo from '../../assets/icons/masterLogo.png';
+import PrimaryButton from '../../components/Buttons/PrimaryButton';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
@@ -99,7 +100,7 @@ const LoginScreen = ({ navigation }) => {
   const handleForgotPassword = () => navigation.navigate('ForgotPassword');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaProvider style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.safeArea}
@@ -133,7 +134,7 @@ const LoginScreen = ({ navigation }) => {
                 <View style={styles.logoGlow} />
               </View>
               <Text style={styles.appName}>
-                Expens<Text style={styles.appNameAccent}>O</Text>
+                Expens<Text style={styles.appNameAccent}>Ooo</Text>
               </Text>
               <Text style={styles.subtitle}>Welcome back</Text>
             </Animated.View>
@@ -224,25 +225,13 @@ const LoginScreen = ({ navigation }) => {
               </TouchableOpacity>
 
               {/* Login Button */}
-              <TouchableOpacity
-                style={[
-                  styles.loginButton,
-                  isLoading && styles.disabledButton,
-                  (!email || !password) && styles.buttonDisabled,
-                ]}
+              <PrimaryButton
+                title="Log in"
                 onPress={handleLogin}
-                disabled={isLoading || !email || !password}
-                activeOpacity={0.8}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <Text style={styles.loginText}>Log in</Text>
-                    <Icon name="arrow-forward-circle" size={22} color="#fff" />
-                  </View>
-                )}
-              </TouchableOpacity>
+                loading={isLoading}
+                disabled={!email || !password}
+                iconName="arrow-forward-circle"
+              />
             </View>
 
             {/* Divider */}
@@ -254,14 +243,17 @@ const LoginScreen = ({ navigation }) => {
 
             {/* Social Login Options */}
             <View style={styles.socialContainer}>
-              <TouchableOpacity style={styles.socialButton}>
+              <TouchableOpacity
+                style={styles.socialButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Coming Soon',
+                    'Google login will be available in the next update',
+                  );
+                }}
+              >
                 <Icon name="logo-google" size={20} color="#DB4437" />
                 <Text style={styles.socialText}>Google</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.socialButton}>
-                <Icon name="logo-apple" size={20} color="#FFFFFF" />
-                <Text style={styles.socialText}>Apple</Text>
               </TouchableOpacity>
             </View>
 
@@ -278,7 +270,7 @@ const LoginScreen = ({ navigation }) => {
           </Animated.View>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </SafeAreaProvider>
   );
 };
 

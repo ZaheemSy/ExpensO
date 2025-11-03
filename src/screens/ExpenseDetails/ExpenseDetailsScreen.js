@@ -1,73 +1,76 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  TextInput,
-  Alert,
   ScrollView,
-  FlatList
+  Alert,
+  Modal,
+  TextInput,
+  FlatList,
+  Image,
 } from 'react-native';
-import RBSheet from 'react-native-raw-bottom-sheet';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
-import sheetsService from '../../services/sheetsService';
+import ExpenseSyncService from '../../services/expenseSyncService';
 
 const ExpenseDetailsScreen = ({ navigation, route }) => {
   const { sheet } = route.params;
   const { userEmail } = useAuth();
-  const refRBSheet = useRef();
+  const [expenses, setExpenses] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentType, setCurrentType] = useState('spend'); // 'spend' or 'collected'
 
+  // Form state
   const [amount, setAmount] = useState('');
   const [purpose, setPurpose] = useState('');
-  const [category, setCategory] = useState('');
-  const [currentType, setCurrentType] = useState('Spend'); // 'Spend' or 'Received'
-  const [isLoading, setIsLoading] = useState(false);
-  const [expenses, setExpenses] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('Misc');
+  const [image, setImage] = useState(null);
 
   useEffect(() => {
+    if (userEmail) {
+      ExpenseSyncService.setUserEmail(userEmail);
+    }
     loadExpenses();
-  }, []);
+    loadCategories();
+  }, [userEmail, sheet.id]);
 
   const loadExpenses = async () => {
     try {
-      const storedExpenses = await AsyncStorage.getItem(`expenses_${sheet.id}_${userEmail}`);
-      if (storedExpenses) {
-        setExpenses(JSON.parse(storedExpenses));
-      }
+      const expenseList = await ExpenseSyncService.getExpenses(sheet.id);
+      setExpenses(expenseList);
     } catch (error) {
       console.error('Error loading expenses:', error);
     }
   };
 
-  const saveExpenses = async (updatedExpenses) => {
+  const loadCategories = async () => {
     try {
-      await AsyncStorage.setItem(`expenses_${sheet.id}_${userEmail}`, JSON.stringify(updatedExpenses));
-      setExpenses(updatedExpenses);
+      const categoryList = await ExpenseSyncService.getCategories();
+      setCategories(categoryList);
     } catch (error) {
-      console.error('Error saving expenses:', error);
+      console.error('Error loading categories:', error);
     }
   };
 
-  const handleSpendPress = () => {
-    setCurrentType('Spend');
-    refRBSheet.current.open();
-  };
-
-  const handleReceivedPress = () => {
-    setCurrentType('Received');
-    refRBSheet.current.open();
+  const handleAddExpense = type => {
+    setCurrentType(type);
+    resetForm();
+    setIsAddModalVisible(true);
   };
 
   const resetForm = () => {
     setAmount('');
     setPurpose('');
-    setCategory('');
+    setSelectedCategory('Misc');
+    setImage(null);
   };
 
-  const validateEntry = () => {
+  const validateForm = () => {
     if (!amount.trim()) {
       Alert.alert('Error', 'Please enter an amount');
       return false;
@@ -87,8 +90,8 @@ const ExpenseDetailsScreen = ({ navigation, route }) => {
     return true;
   };
 
-  const handleSave = async () => {
-    if (!validateEntry()) {
+  const handleSaveExpense = async () => {
+    if (!validateForm()) {
       return;
     }
 
@@ -96,255 +99,349 @@ const ExpenseDetailsScreen = ({ navigation, route }) => {
 
     try {
       const expenseData = {
-        id: Date.now().toString(),
         amount: parseFloat(amount),
         purpose: purpose.trim(),
-        category: category.trim() || 'General',
+        category: selectedCategory,
         type: currentType,
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toLocaleTimeString(),
-        createdAt: new Date().toISOString(),
-        synced: false,
-        sheetId: sheet.id
+        image: image,
       };
 
-      // Save locally first
-      const updatedExpenses = [expenseData, ...expenses];
-      await saveExpenses(updatedExpenses);
+      const result = await ExpenseSyncService.addExpense(sheet.id, expenseData);
 
-      // Try to sync to Google Sheets if sheet is synced
-      if (sheet.googleSheetId) {
-        try {
-          const syncResult = await sheetsService.addExpense({
-            ...expenseData,
-            description: expenseData.purpose,
-            paymentMethod: 'Not specified',
-            notes: `Type: ${expenseData.type}`,
-            spreadsheetId: sheet.googleSheetId
-          });
+      if (result.success) {
+        resetForm();
+        setIsAddModalVisible(false);
+        await loadExpenses(); // Reload expenses to show the new one
 
-          // Check if permissions are required
-          if (syncResult.requiresPermission) {
-            Alert.alert(
-              'Google Sheets Access Required',
-              'To sync your expenses, we need permission to access your Google Sheets.',
-              [
-                {
-                  text: 'Continue Offline',
-                  style: 'cancel'
-                },
-                {
-                  text: 'Grant Access',
-                  onPress: () => {
-                    navigation.navigate('GooglePermissions', {
-                      onPermissionGranted: () => {
-                        // Don't retry automatically, user can try again
-                        Alert.alert('Success', 'Permissions granted! Please try adding the expense again.');
-                      }
-                    });
-                  }
-                }
-              ]
-            );
-          } else if (syncResult.success) {
-            // Update the expense to mark it as synced
-            expenseData.synced = true;
-            const syncedExpenses = [expenseData, ...expenses];
-            await saveExpenses(syncedExpenses);
-          }
-        } catch (syncError) {
-          console.error('Sync error:', syncError);
-          // Continue with local save even if sync fails
-        }
+        Alert.alert(
+          'Success',
+          `${
+            currentType === 'spend' ? 'Expense' : 'Income'
+          } added successfully!`,
+          [{ text: 'OK' }],
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to add expense');
       }
-
-      resetForm();
-      refRBSheet.current.close();
-
-      Alert.alert(
-        'Success',
-        `${currentType} entry saved successfully!`,
-        [{ text: 'OK' }]
-      );
-
     } catch (error) {
-      console.error('Error saving expense:', error);
-      Alert.alert('Error', 'Failed to save entry');
+      console.error('Error adding expense:', error);
+      Alert.alert('Error', 'Failed to add expense');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCancel = () => {
-    resetForm();
-    refRBSheet.current.close();
+  const handleDeleteExpense = expenseId => {
+    Alert.alert(
+      'Delete Expense',
+      'Are you sure you want to delete this expense?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteExpense(expenseId),
+        },
+      ],
+    );
   };
 
-  const calculateTotal = () => {
+  const deleteExpense = async expenseId => {
+    try {
+      const result = await ExpenseSyncService.deleteExpense(
+        sheet.id,
+        expenseId,
+      );
+
+      if (result.success) {
+        await loadExpenses(); // Reload expenses
+        Alert.alert('Success', 'Expense deleted successfully');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to delete expense');
+      }
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      Alert.alert('Error', 'Failed to delete expense');
+    }
+  };
+
+  const calculateTotals = () => {
     const spent = expenses
-      .filter(expense => expense.type === 'Spend')
+      .filter(expense => expense.type === 'spend')
       .reduce((sum, expense) => sum + expense.amount, 0);
 
-    const received = expenses
-      .filter(expense => expense.type === 'Received')
+    const collected = expenses
+      .filter(expense => expense.type === 'collected')
       .reduce((sum, expense) => sum + expense.amount, 0);
 
-    return { spent, received, balance: received - spent };
+    const balance = collected - spent;
+
+    return { spent, collected, balance };
   };
+
+  const totals = calculateTotals();
 
   const renderExpenseItem = ({ item }) => (
     <View style={styles.expenseItem}>
       <View style={styles.expenseHeader}>
-        <Text style={[
-          styles.expenseAmount,
-          item.type === 'Spend' ? styles.spentAmount : styles.receivedAmount
-        ]}>
-          {item.type === 'Spend' ? '-' : '+'}${item.amount.toFixed(2)}
-        </Text>
-        <Text style={styles.expenseDate}>{item.date}</Text>
+        <View style={styles.amountContainer}>
+          <Text
+            style={[
+              styles.amount,
+              item.type === 'spend'
+                ? styles.spentAmount
+                : styles.collectedAmount,
+            ]}
+          >
+            {item.type === 'spend' ? '-' : '+'}₹{item.amount.toFixed(2)}
+          </Text>
+          <Text style={styles.expenseDate}>{item.date}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleDeleteExpense(item.id)}
+        >
+          <Icon name="trash-outline" size={18} color="#dc3545" />
+        </TouchableOpacity>
       </View>
-      <Text style={styles.expensePurpose}>{item.purpose}</Text>
+
+      <Text style={styles.purpose}>{item.purpose}</Text>
+
       <View style={styles.expenseFooter}>
-        <Text style={styles.expenseCategory}>{item.category}</Text>
-        <Text style={[styles.syncStatus, item.synced && styles.synced]}>
-          {item.synced ? '✓ Synced' : '⏳ Local'}
-        </Text>
+        <View
+          style={[
+            styles.categoryBadge,
+            item.category === 'Misc' && styles.miscBadge,
+          ]}
+        >
+          <Text style={styles.categoryText}>{item.category}</Text>
+        </View>
+        <Text style={styles.time}>{item.time}</Text>
       </View>
+
+      {item.image && (
+        <TouchableOpacity style={styles.imagePreview}>
+          <Image source={{ uri: item.image }} style={styles.image} />
+          <Icon name="eye-outline" size={16} color="#666666" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  const totals = calculateTotal();
+  const renderCategoryOption = category => (
+    <TouchableOpacity
+      key={category}
+      style={[
+        styles.categoryOption,
+        selectedCategory === category && styles.selectedCategoryOption,
+      ]}
+      onPress={() => setSelectedCategory(category)}
+    >
+      <Text
+        style={[
+          styles.categoryOptionText,
+          selectedCategory === category && styles.selectedCategoryOptionText,
+        ]}
+      >
+        {category}
+      </Text>
+      {selectedCategory === category && (
+        <Icon name="checkmark" size={16} color="#007bff" />
+      )}
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backButtonText}>‹ Back</Text>
+          <Icon name="arrow-back" size={24} color="#007bff" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{sheet.name}</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.title} numberOfLines={1}>
+          {sheet.name}
+        </Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.pinButton}>
+            <Icon name="pin-outline" size={20} color="#666666" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.downloadButton}>
+            <Icon name="download-outline" size={20} color="#666666" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Summary Cards */}
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Spent</Text>
+            <Icon name="arrow-down-circle" size={24} color="#dc3545" />
+            <Text style={styles.summaryLabel}>Total Spent</Text>
             <Text style={[styles.summaryAmount, styles.spentAmount]}>
-              -${totals.spent.toFixed(2)}
+              ₹{totals.spent.toFixed(2)}
             </Text>
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Received</Text>
-            <Text style={[styles.summaryAmount, styles.receivedAmount]}>
-              +${totals.received.toFixed(2)}
+            <Icon name="arrow-up-circle" size={24} color="#28a745" />
+            <Text style={styles.summaryLabel}>Total Collected</Text>
+            <Text style={[styles.summaryAmount, styles.collectedAmount]}>
+              ₹{totals.collected.toFixed(2)}
             </Text>
           </View>
 
           <View style={styles.summaryCard}>
+            <Icon
+              name="wallet-outline"
+              size={24}
+              color={totals.balance >= 0 ? '#28a745' : '#dc3545'}
+            />
             <Text style={styles.summaryLabel}>Balance</Text>
-            <Text style={[
-              styles.summaryAmount,
-              totals.balance >= 0 ? styles.receivedAmount : styles.spentAmount
-            ]}>
-              ${totals.balance.toFixed(2)}
+            <Text
+              style={[
+                styles.summaryAmount,
+                totals.balance >= 0
+                  ? styles.collectedAmount
+                  : styles.spentAmount,
+              ]}
+            >
+              ₹{Math.abs(totals.balance).toFixed(2)}
+              {totals.balance >= 0 ? ' Surplus' : ' Deficit'}
             </Text>
           </View>
         </View>
 
-        {/* Recent Expenses */}
-        <View style={styles.recentSection}>
-          <Text style={styles.sectionTitle}>Recent Entries</Text>
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.spendButton]}
+            onPress={() => handleAddExpense('spend')}
+          >
+            <Icon name="arrow-down-circle" size={20} color="#ffffff" />
+            <Text style={styles.actionButtonText}>Add Spend</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.collectButton]}
+            onPress={() => handleAddExpense('collected')}
+          >
+            <Icon name="arrow-up-circle" size={20} color="#ffffff" />
+            <Text style={styles.actionButtonText}>Add Collected</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Recent Transactions */}
+        <View style={styles.transactionsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <Text style={styles.transactionCount}>
+              {expenses.length} {expenses.length === 1 ? 'entry' : 'entries'}
+            </Text>
+          </View>
+
           {expenses.length > 0 ? (
             <FlatList
-              data={expenses.slice(0, 10)} // Show last 10 entries
-              keyExtractor={(item) => item.id}
+              data={expenses}
+              keyExtractor={item => item.id}
               renderItem={renderExpenseItem}
               scrollEnabled={false}
+              showsVerticalScrollIndicator={false}
             />
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No entries yet</Text>
-              <Text style={styles.emptySubtext}>Start by adding your first expense or income</Text>
+              <Icon name="receipt-outline" size={60} color="#cccccc" />
+              <Text style={styles.emptyText}>No transactions yet</Text>
+              <Text style={styles.emptySubtext}>
+                Start by adding your first expense or income
+              </Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.spendButton} onPress={handleSpendPress}>
-          <Text style={styles.actionButtonText}>Spend</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.receivedButton} onPress={handleReceivedPress}>
-          <Text style={styles.actionButtonText}>Received</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom Sheet for Entry Form */}
-      <RBSheet
-        ref={refRBSheet}
-        closeOnDragDown={true}
-        closeOnPressMask={false}
-        height={400}
-        customStyles={{
-          wrapper: {
-            backgroundColor: 'rgba(0,0,0,0.5)',
-          },
-          draggableIcon: {
-            backgroundColor: '#000',
-          },
-          container: {
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-          },
-        }}
+      {/* Add Expense Modal */}
+      <Modal
+        visible={isAddModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsAddModalVisible(false)}
       >
-        <View style={styles.bottomSheetContent}>
-          <Text style={styles.bottomSheetTitle}>Add {currentType} Entry</Text>
-
-          <View style={styles.formContainer}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Amount</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-                autoFocus={true}
-              />
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                Add {currentType === 'spend' ? 'Spend' : 'Collected'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setIsAddModalVisible(false)}
+                disabled={isLoading}
+              >
+                <Icon name="close" size={24} color="#666666" />
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Purpose</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="What was this for?"
-                value={purpose}
-                onChangeText={setPurpose}
-              />
-            </View>
+            <ScrollView
+              style={styles.formContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Amount Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Amount *</Text>
+                <View style={styles.amountInputContainer}>
+                  <Text style={styles.currencySymbol}>₹</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder="0.00"
+                    value={amount}
+                    onChangeText={setAmount}
+                    keyboardType="decimal-pad"
+                    autoFocus={true}
+                  />
+                </View>
+              </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Category (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Food, Transport, Salary"
-                value={category}
-                onChangeText={setCategory}
-              />
-            </View>
+              {/* Purpose Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Purpose *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder={`What was this ${
+                    currentType === 'spend' ? 'expense' : 'income'
+                  } for?`}
+                  value={purpose}
+                  onChangeText={setPurpose}
+                  multiline={true}
+                  numberOfLines={3}
+                />
+              </View>
 
-            <View style={styles.bottomSheetButtons}>
+              {/* Category Selection */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Category</Text>
+                <View style={styles.categoriesContainer}>
+                  {categories.map(renderCategoryOption)}
+                </View>
+              </View>
+
+              {/* Image Upload (Optional) */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Attach Image (Optional)</Text>
+                <TouchableOpacity style={styles.imageUploadButton}>
+                  <Icon name="camera-outline" size={20} color="#666666" />
+                  <Text style={styles.imageUploadText}>Add Photo</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            {/* Modal Buttons */}
+            <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={handleCancel}
+                onPress={() => setIsAddModalVisible(false)}
                 disabled={isLoading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -352,17 +449,19 @@ const ExpenseDetailsScreen = ({ navigation, route }) => {
 
               <TouchableOpacity
                 style={[styles.saveButton, isLoading && styles.disabledButton]}
-                onPress={handleSave}
+                onPress={handleSaveExpense}
                 disabled={isLoading}
               >
                 <Text style={styles.saveButtonText}>
-                  {isLoading ? 'Saving...' : 'Save'}
+                  {isLoading
+                    ? 'Saving...'
+                    : `Add ${currentType === 'spend' ? 'Spend' : 'Income'}`}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
-      </RBSheet>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -386,96 +485,148 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 5,
   },
   backButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#007bff',
     fontWeight: '500',
+    marginLeft: 5,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333333',
     flex: 1,
     textAlign: 'center',
     marginHorizontal: 10,
   },
-  placeholder: {
-    width: 50,
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pinButton: {
+    padding: 8,
+    marginRight: 5,
+  },
+  downloadButton: {
+    padding: 8,
   },
   content: {
     flex: 1,
-    padding: 20,
   },
   summaryContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 25,
+    padding: 20,
     gap: 10,
   },
   summaryCard: {
     flex: 1,
     backgroundColor: '#ffffff',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    elevation: 2,
   },
   summaryLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666666',
-    marginBottom: 5,
+    marginTop: 8,
+    marginBottom: 4,
   },
   summaryAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   spentAmount: {
     color: '#dc3545',
   },
-  receivedAmount: {
+  collectedAmount: {
     color: '#28a745',
   },
-  recentSection: {
+  actionButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 15,
+    marginBottom: 20,
+  },
+  actionButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 10,
+    gap: 8,
+  },
+  spendButton: {
+    backgroundColor: '#dc3545',
+  },
+  collectButton: {
+    backgroundColor: '#28a745',
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  transactionsSection: {
+    padding: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333333',
-    marginBottom: 15,
+  },
+  transactionCount: {
+    fontSize: 14,
+    color: '#666666',
   },
   expenseItem: {
     backgroundColor: '#ffffff',
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,
-    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    elevation: 1,
   },
   expenseHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
-  expenseAmount: {
+  amountContainer: {
+    flex: 1,
+  },
+  amount: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
   },
   expenseDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666666',
   },
-  expensePurpose: {
+  deleteButton: {
+    padding: 4,
+  },
+  purpose: {
     fontSize: 16,
     color: '#333333',
     marginBottom: 8,
@@ -485,29 +636,48 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  expenseCategory: {
-    fontSize: 12,
-    color: '#666666',
-    backgroundColor: '#f8f9fa',
+  categoryBadge: {
+    backgroundColor: '#e9ecef',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 4,
   },
-  syncStatus: {
-    fontSize: 10,
-    color: '#ff9500',
-    fontWeight: 'bold',
+  miscBadge: {
+    backgroundColor: '#fff3cd',
   },
-  synced: {
-    color: '#28a745',
+  categoryText: {
+    fontSize: 12,
+    color: '#666666',
+    fontWeight: '500',
+  },
+  time: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  imagePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  image: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 8,
   },
   emptyContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 40,
   },
   emptyText: {
     fontSize: 16,
     color: '#666666',
+    marginTop: 10,
     marginBottom: 5,
   },
   emptySubtext: {
@@ -515,43 +685,32 @@ const styles = StyleSheet.create({
     color: '#999999',
     textAlign: 'center',
   },
-  actionButtons: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
     flexDirection: 'row',
-    padding: 20,
-    gap: 15,
-  },
-  spendButton: {
-    flex: 1,
-    backgroundColor: '#dc3545',
-    paddingVertical: 15,
-    borderRadius: 10,
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  receivedButton: {
-    flex: 1,
-    backgroundColor: '#28a745',
-    paddingVertical: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  bottomSheetContent: {
-    flex: 1,
     padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eeeeee',
   },
-  bottomSheetTitle: {
+  modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333333',
-    textAlign: 'center',
-    marginBottom: 20,
   },
   formContainer: {
-    flex: 1,
+    padding: 20,
   },
   inputGroup: {
     marginBottom: 20,
@@ -562,20 +721,82 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 8,
   },
-  input: {
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+  },
+  currencySymbol: {
+    fontSize: 16,
+    color: '#333333',
+    marginRight: 8,
+  },
+  amountInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  textInput: {
     borderWidth: 1,
     borderColor: '#dddddd',
     borderRadius: 8,
     paddingHorizontal: 15,
     paddingVertical: 12,
     fontSize: 16,
-    backgroundColor: '#ffffff',
+    textAlignVertical: 'top',
   },
-  bottomSheetButtons: {
+  categoriesContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    gap: 6,
+  },
+  selectedCategoryOption: {
+    backgroundColor: '#e7f3ff',
+    borderColor: '#007bff',
+  },
+  categoryOptionText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  selectedCategoryOptionText: {
+    color: '#007bff',
+    fontWeight: '500',
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    paddingVertical: 15,
+    gap: 8,
+  },
+  imageUploadText: {
+    fontSize: 16,
+    color: '#666666',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    padding: 20,
     gap: 15,
-    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eeeeee',
   },
   cancelButton: {
     flex: 1,

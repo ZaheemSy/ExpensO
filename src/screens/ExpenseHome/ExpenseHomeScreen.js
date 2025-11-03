@@ -8,11 +8,11 @@ import {
   Modal,
   TextInput,
   Alert,
-  SafeAreaView
+  SafeAreaView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
-import sheetsService from '../../services/sheetsService';
+import ExpenseSyncService from '../../services/expenseSyncService';
+import SyncService from '../../services/syncService';
 
 const ExpenseHomeScreen = ({ navigation }) => {
   const { userEmail } = useAuth();
@@ -22,26 +22,20 @@ const ExpenseHomeScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    // Set user email in sync service
+    if (userEmail) {
+      ExpenseSyncService.setUserEmail(userEmail);
+    }
     loadSheets();
-  }, []);
+  }, [userEmail]);
 
   const loadSheets = async () => {
     try {
-      const storedSheets = await AsyncStorage.getItem(`expense_sheets_${userEmail}`);
-      if (storedSheets) {
-        setSheets(JSON.parse(storedSheets));
-      }
+      const expenseSheets = await ExpenseSyncService.getExpenseSheets();
+      setSheets(expenseSheets);
     } catch (error) {
       console.error('Error loading sheets:', error);
-    }
-  };
-
-  const saveSheets = async (updatedSheets) => {
-    try {
-      await AsyncStorage.setItem(`expense_sheets_${userEmail}`, JSON.stringify(updatedSheets));
-      setSheets(updatedSheets);
-    } catch (error) {
-      console.error('Error saving sheets:', error);
+      Alert.alert('Error', 'Failed to load expense sheets');
     }
   };
 
@@ -56,67 +50,40 @@ const ExpenseHomeScreen = ({ navigation }) => {
       return;
     }
 
+    // Check for duplicate sheet names
+    const duplicateSheet = sheets.find(
+      sheet => sheet.name.toLowerCase() === sheetName.trim().toLowerCase(),
+    );
+
+    if (duplicateSheet) {
+      Alert.alert('Error', 'A sheet with this name already exists');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Create sheet in Google Sheets
-      const result = await sheetsService.createExpenseSheet(userEmail);
-
-      // Check if permissions are required
-      if (result.requiresPermission) {
-        setIsLoading(false);
-        setIsModalVisible(false);
-
-        Alert.alert(
-          'Google Sheets Access Required',
-          'To sync your expense sheets with Google Sheets, we need your permission to access your Google account.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel'
-            },
-            {
-              text: 'Grant Access',
-              onPress: () => {
-                navigation.navigate('GooglePermissions', {
-                  onPermissionGranted: () => {
-                    // Retry creating the sheet after permissions are granted
-                    handleSaveAndOpen();
-                  }
-                });
-              }
-            }
-          ]
-        );
-        return;
-      }
-
-      const newSheet = {
-        id: Date.now().toString(),
+      const result = await ExpenseSyncService.createExpenseSheet({
         name: sheetName.trim(),
-        createdAt: new Date().toISOString(),
-        googleSheetId: result.success ? result.spreadsheetId : null,
-        synced: result.success,
-        lastModified: new Date().toISOString()
-      };
-
-      const updatedSheets = [newSheet, ...sheets];
-      await saveSheets(updatedSheets);
-
-      setIsModalVisible(false);
-      setSheetName('');
-
-      // Navigate to ExpenseDetailsScreen
-      navigation.navigate('ExpenseDetails', {
-        sheet: newSheet
+        userEmail,
       });
 
       if (result.success) {
-        Alert.alert('Success', 'Sheet created and synced to Google Sheets!');
-      } else {
-        Alert.alert('Info', 'Sheet created locally. Will sync when internet is available.');
-      }
+        setIsModalVisible(false);
+        setSheetName('');
 
+        // Reload sheets to get the updated list
+        await loadSheets();
+
+        // Navigate to ExpenseDetailsScreen with the new sheet
+        navigation.navigate('ExpenseDetails', {
+          sheet: result.sheet,
+        });
+
+        Alert.alert('Success', result.message);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to create sheet');
+      }
     } catch (error) {
       console.error('Error creating sheet:', error);
       Alert.alert('Error', 'Failed to create sheet');
@@ -125,29 +92,58 @@ const ExpenseHomeScreen = ({ navigation }) => {
     }
   };
 
-  const handleSheetPress = (sheet) => {
+  const handleSheetPress = sheet => {
     navigation.navigate('ExpenseDetails', { sheet });
   };
 
-  const renderSheetItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.sheetItem}
-      onPress={() => handleSheetPress(item)}
-    >
-      <View style={styles.sheetInfo}>
-        <Text style={styles.sheetName}>{item.name}</Text>
-        <Text style={styles.sheetDate}>
-          Created: {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-        <View style={styles.syncStatus}>
-          <Text style={[styles.syncText, item.synced && styles.syncedText]}>
-            {item.synced ? '✓ Synced' : '⏳ Local'}
+  const handleManualSync = async () => {
+    try {
+      const result = await SyncService.manualSync();
+      if (result.success) {
+        Alert.alert('Success', result.message);
+        // Reload sheets to reflect sync status
+        await loadSheets();
+      } else {
+        Alert.alert('Sync Failed', result.message);
+      }
+    } catch (error) {
+      Alert.alert('Sync Error', 'Failed to sync data');
+    }
+  };
+
+  const handleCategoryManager = () => {
+    navigation.navigate('CategoryManager');
+  };
+
+  const renderSheetItem = ({ item }) => {
+    const totals = ExpenseSyncService.calculateSheetTotals(item);
+
+    return (
+      <TouchableOpacity
+        style={styles.sheetItem}
+        onPress={() => handleSheetPress(item)}
+      >
+        <View style={styles.sheetInfo}>
+          <Text style={styles.sheetName}>{item.name}</Text>
+          <Text style={styles.sheetDate}>
+            Created: {new Date(item.createdAt).toLocaleDateString()}
           </Text>
+          <View style={styles.totalsContainer}>
+            <Text style={styles.totalsText}>
+              Spent: ₹{totals.spent.toFixed(2)} | Collected: ₹
+              {totals.collected.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.syncStatus}>
+            <Text style={[styles.syncText, item.synced && styles.syncedText]}>
+              {item.synced ? '✓ Synced' : '⏳ Local'}
+            </Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.arrow}>›</Text>
-    </TouchableOpacity>
-  );
+        <Text style={styles.arrow}>›</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -159,33 +155,67 @@ const ExpenseHomeScreen = ({ navigation }) => {
           <Text style={styles.backButtonText}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Expense Sheets</Text>
-        <View style={styles.placeholder} />
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.syncButton}
+            onPress={handleManualSync}
+          >
+            <Text style={styles.syncButtonText}>🔄</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleAddSheet}
+            disabled={isLoading}
+          >
+            <Text style={styles.actionButtonText}>
+              {isLoading ? 'Creating...' : '+ Create Sheet'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              sheets.length === 0 && styles.disabledButton,
+            ]}
+            onPress={() =>
+              sheets.length > 0 && navigation.navigate('SheetList')
+            }
+            disabled={sheets.length === 0}
+          >
+            <Text style={styles.actionButtonText}>📂 Open Sheet</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleCategoryManager}
+          >
+            <Text style={styles.actionButtonText}>📊 Category Manager</Text>
+          </TouchableOpacity>
+        </View>
+
         <FlatList
           data={sheets}
-          keyExtractor={(item) => item.id}
+          keyExtractor={item => item.id}
           renderItem={renderSheetItem}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No expense sheets created yet</Text>
-              <Text style={styles.emptySubtext}>Tap the button below to create your first sheet</Text>
+              <Text style={styles.emptyText}>
+                No expense sheets created yet
+              </Text>
+              <Text style={styles.emptySubtext}>
+                Create your first sheet to get started
+              </Text>
             </View>
           }
           style={styles.list}
           showsVerticalScrollIndicator={false}
         />
-
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddSheet}
-          disabled={isLoading}
-        >
-          <Text style={styles.addButtonText}>
-            {isLoading ? 'Creating...' : '+ Add Sheet'}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <Modal
@@ -263,12 +293,38 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
   },
-  placeholder: {
-    width: 50,
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncButton: {
+    padding: 8,
+    marginLeft: 10,
+  },
+  syncButtonText: {
+    fontSize: 18,
   },
   content: {
     flex: 1,
     padding: 20,
+  },
+  actionButtons: {
+    marginBottom: 20,
+    gap: 10,
+  },
+  actionButton: {
+    backgroundColor: '#007bff',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    backgroundColor: '#cccccc',
   },
   list: {
     flex: 1,
@@ -300,6 +356,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     marginBottom: 5,
+  },
+  totalsContainer: {
+    marginBottom: 5,
+  },
+  totalsText: {
+    fontSize: 14,
+    color: '#333333',
+    fontWeight: '500',
   },
   syncStatus: {
     alignSelf: 'flex-start',
@@ -333,18 +397,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999999',
     textAlign: 'center',
-  },
-  addButton: {
-    backgroundColor: '#007bff',
-    paddingVertical: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   modalOverlay: {
     flex: 1,
@@ -402,9 +454,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  disabledButton: {
-    backgroundColor: '#cccccc',
   },
 });
 

@@ -20,6 +20,10 @@ import Home from './src/screens/Home/Home';
 import Expenso from './src/screens/Expenso/Expenso';
 import Debt from './src/screens/Debt/Debt';
 import ForgotPasswordScreen from './src/screens/Landing/ForgotPasswordScreen';
+import ExpenseHomeScreen from './src/screens/ExpenseHome/ExpenseHomeScreen';
+import CategoryManager from './src/screens/CategoryManager/CategoryManager';
+import ExpenseDetailsScreen from './src/screens/ExpenseDetails/ExpenseDetailsScreen';
+import SheetListScreen from './src/screens/SheetList/SheetListScreen';
 
 const Stack = createStackNavigator();
 
@@ -60,6 +64,17 @@ const AppNavigator = () => {
               <Stack.Screen name="Home" component={Home} />
               <Stack.Screen name="Expenso" component={Expenso} />
               <Stack.Screen name="Debt" component={Debt} />
+              <Stack.Screen name="ExpenseHome" component={ExpenseHomeScreen} />
+              <Stack.Screen
+                name="CategoryManager"
+                component={CategoryManager}
+              />
+              <Stack.Screen
+                name="ExpenseDetails"
+                component={ExpenseDetailsScreen}
+              />
+
+              <Stack.Screen name="SheetList" component={SheetListScreen} />
             </>
           ) : (
             <>

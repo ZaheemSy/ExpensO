@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firebaseEmailService from '../services/firebaseEmailService';
+import ExpenseSyncService from '../services/expenseSyncService';
 import { auth } from '../config/firebase';
 
 const AuthContext = createContext({});
@@ -20,13 +21,16 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Listen for Firebase auth state changes
-    const unsubscribe = auth().onAuthStateChanged((user) => {
+    const unsubscribe = auth().onAuthStateChanged(user => {
       if (user && user.emailVerified) {
         setIsAuthenticated(true);
         setUserEmail(user.email);
+        // Initialize sync service with user email
+        ExpenseSyncService.setUserEmail(user.email);
       } else {
         setIsAuthenticated(false);
         setUserEmail(null);
+        ExpenseSyncService.setUserEmail(null);
       }
       setIsLoading(false);
     });
@@ -43,14 +47,17 @@ export const AuthProvider = ({ children }) => {
       if (currentUser && currentUser.emailVerified) {
         setIsAuthenticated(true);
         setUserEmail(currentUser.email);
+        ExpenseSyncService.setUserEmail(currentUser.email);
       } else {
         setIsAuthenticated(false);
         setUserEmail(null);
+        ExpenseSyncService.setUserEmail(null);
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
       setIsAuthenticated(false);
       setUserEmail(null);
+      ExpenseSyncService.setUserEmail(null);
     } finally {
       setIsLoading(false);
     }
@@ -59,11 +66,16 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       // Use Firebase authentication
-      const result = await firebaseEmailService.signInWithEmail(email, password);
+      const result = await firebaseEmailService.signInWithEmail(
+        email,
+        password,
+      );
 
       if (result.success) {
         setUserEmail(result.user.email);
         setIsAuthenticated(true);
+        // Initialize sync service
+        ExpenseSyncService.setUserEmail(result.user.email);
         return { success: true };
       } else {
         return { success: false, error: result.error };
@@ -76,14 +88,23 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithGoogle = async () => {
     try {
+      // Remove Google login for now since authService is not defined
+      // You can implement this later when you set up Google authentication
+      console.log('Google login not implemented yet');
+      return { success: false, error: 'Google login not available yet' };
+
+      // If you want to implement Google login later, uncomment this:
+      /*
       const result = await authService.signInWithGoogle();
       if (result.success) {
         setUserEmail(result.userInfo.user.email);
         setIsAuthenticated(true);
+        ExpenseSyncService.setUserEmail(result.userInfo.user.email);
         return { success: true, userInfo: result.userInfo };
       } else {
         return { success: false, error: result.message };
       }
+      */
     } catch (error) {
       console.error('Error during Google login:', error);
       return { success: false, error: error.message };
@@ -95,6 +116,7 @@ export const AuthProvider = ({ children }) => {
       await firebaseEmailService.signOut();
       setIsAuthenticated(false);
       setUserEmail(null);
+      ExpenseSyncService.setUserEmail(null);
       return { success: true };
     } catch (error) {
       console.error('Error during logout:', error);
@@ -106,7 +128,7 @@ export const AuthProvider = ({ children }) => {
     await checkAuthStatus();
   };
 
-  const sendPasswordResetEmail = async (email) => {
+  const sendPasswordResetEmail = async email => {
     try {
       await auth().sendPasswordResetEmail(email);
       return { success: true };
@@ -125,12 +147,8 @@ export const AuthProvider = ({ children }) => {
     loginWithGoogle,
     logout,
     refreshAuth,
-    sendPasswordResetEmail, // Expose the new function
+    sendPasswordResetEmail,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
