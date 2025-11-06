@@ -12,12 +12,15 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
 import ExpenseSyncService from '../../services/expenseSyncService';
+import SheetSyncFixer from '../../utils/sheetSyncFixer';
 
 const SheetListScreen = ({ navigation, route }) => {
   const { userEmail } = useAuth();
   const [sheets, setSheets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncingSheetId, setSyncingSheetId] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
 
   useEffect(() => {
     if (userEmail) {
@@ -52,6 +55,85 @@ const SheetListScreen = ({ navigation, route }) => {
     navigation.navigate('ExpensoHomePage');
   };
 
+  const handleSyncSheet = async (sheetId, sheetName) => {
+    setSyncingSheetId(sheetId);
+
+    try {
+      const result = await SheetSyncFixer.fixLocalSheet(sheetId, userEmail);
+
+      if (result.success) {
+        if (result.alreadySynced) {
+          Alert.alert('Already Synced', result.message);
+        } else {
+          Alert.alert(
+            'Success',
+            `${sheetName} synced successfully!\n${
+              result.expensesSyncing > 0
+                ? `Syncing ${result.expensesSyncing} expenses...`
+                : 'All data synced.'
+            }`,
+          );
+        }
+        // Reload sheets to show updated sync status
+        await loadSheets();
+      } else {
+        Alert.alert('Sync Failed', result.error || 'Failed to sync sheet');
+      }
+    } catch (error) {
+      console.error('Error syncing sheet:', error);
+      Alert.alert('Error', 'Failed to sync sheet');
+    } finally {
+      setSyncingSheetId(null);
+    }
+  };
+
+  const handleSyncAllSheets = async () => {
+    const localSheets = sheets.filter(
+      sheet => !sheet.googleSheetId || !sheet.synced,
+    );
+
+    if (localSheets.length === 0) {
+      Alert.alert(
+        'All Synced',
+        'All sheets are already synced with Google Sheets',
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Sync All Sheets',
+      `Found ${localSheets.length} unsynced sheet(s). Do you want to sync them all?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sync All',
+          onPress: async () => {
+            setSyncingAll(true);
+            try {
+              const result = await SheetSyncFixer.fixAllLocalSheets(userEmail);
+
+              if (result.success) {
+                Alert.alert('Sync Complete', result.message, [
+                  { text: 'OK', onPress: () => loadSheets() },
+                ]);
+              } else {
+                Alert.alert(
+                  'Sync Failed',
+                  result.error || 'Failed to sync sheets',
+                );
+              }
+            } catch (error) {
+              console.error('Error syncing all sheets:', error);
+              Alert.alert('Error', 'Failed to sync sheets');
+            } finally {
+              setSyncingAll(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const getSheetStats = sheet => {
     const totals = ExpenseSyncService.calculateSheetTotals(sheet);
     const transactionCount = sheet.transactions?.length || 0;
@@ -67,11 +149,14 @@ const SheetListScreen = ({ navigation, route }) => {
 
   const renderSheetItem = ({ item }) => {
     const stats = getSheetStats(item);
+    const isUnsynced = !item.googleSheetId || !item.synced;
+    const isSyncing = syncingSheetId === item.id;
 
     return (
       <TouchableOpacity
         style={styles.sheetItem}
         onPress={() => handleSheetPress(item)}
+        disabled={isSyncing}
       >
         <View style={styles.sheetHeader}>
           <View style={styles.sheetInfo}>
@@ -80,7 +165,7 @@ const SheetListScreen = ({ navigation, route }) => {
               Created: {new Date(item.createdAt).toLocaleDateString()}
             </Text>
           </View>
-          <View style={styles.sheetStatus}>
+          <View style={styles.sheetActions}>
             <View
               style={[
                 styles.syncStatus,
@@ -91,6 +176,24 @@ const SheetListScreen = ({ navigation, route }) => {
                 {item.synced ? '✓ Synced' : '⏳ Local'}
               </Text>
             </View>
+
+            {/* Sync Button - Only show for unsynced sheets */}
+            {isUnsynced && (
+              <TouchableOpacity
+                style={[
+                  styles.syncButton,
+                  isSyncing && styles.syncButtonDisabled,
+                ]}
+                onPress={() => handleSyncSheet(item.id, item.name)}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Icon name="cloud-upload-outline" size={16} color="#ffffff" />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -144,10 +247,35 @@ const SheetListScreen = ({ navigation, route }) => {
 
   const ListHeaderComponent = () => (
     <View style={styles.headerInfo}>
-      <Text style={styles.headerTitle}>Your Expense Sheets</Text>
-      <Text style={styles.headerSubtitle}>
-        {sheets.length} {sheets.length === 1 ? 'sheet' : 'sheets'} found
-      </Text>
+      <View style={styles.headerTitleRow}>
+        <View>
+          <Text style={styles.headerTitle}>Your Expense Sheets</Text>
+          <Text style={styles.headerSubtitle}>
+            {sheets.length} {sheets.length === 1 ? 'sheet' : 'sheets'} found
+          </Text>
+        </View>
+
+        {/* Sync All Button */}
+        {sheets.some(s => !s.googleSheetId || !s.synced) && (
+          <TouchableOpacity
+            style={[
+              styles.syncAllButton,
+              syncingAll && styles.syncAllButtonDisabled,
+            ]}
+            onPress={handleSyncAllSheets}
+            disabled={syncingAll}
+          >
+            {syncingAll ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Icon name="cloud-upload" size={18} color="#ffffff" />
+                <Text style={styles.syncAllButtonText}>Sync All</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 
@@ -190,7 +318,7 @@ const SheetListScreen = ({ navigation, route }) => {
           <Icon name="arrow-back" size={24} color="#007bff" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Open Sheet</Text>
+        <Text style={styles.title}>Open Sheets</Text>
         <TouchableOpacity
           style={styles.refreshButton}
           onPress={handleRefresh}
@@ -281,6 +409,11 @@ const styles = StyleSheet.create({
   headerInfo: {
     marginBottom: 20,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -290,6 +423,23 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 16,
     color: '#666666',
+  },
+  syncAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007bff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  syncAllButtonDisabled: {
+    backgroundColor: '#6c757d',
+  },
+  syncAllButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   sheetItem: {
     backgroundColor: '#ffffff',
@@ -322,8 +472,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
   },
-  sheetStatus: {
-    marginLeft: 10,
+  sheetActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   syncStatus: {
     paddingHorizontal: 8,
@@ -339,6 +491,18 @@ const styles = StyleSheet.create({
   syncStatusText: {
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  syncButton: {
+    backgroundColor: '#28a745',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncButtonDisabled: {
+    backgroundColor: '#6c757d',
   },
   statsContainer: {
     flexDirection: 'row',

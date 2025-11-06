@@ -1,26 +1,36 @@
 {
   "project_info": {
-    "project_number": "514345508568",
-    "project_id": "expenso-eff7f",
-    "storage_bucket": "expenso-eff7f.firebasestorage.app"
+    "project_number": "427599216265",
+    "project_id": "expenso4-709da",
+    "storage_bucket": "expenso4-709da.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:514345508568:android:56f199064f35ccb72e01ad",
+        "mobilesdk_app_id": "1:427599216265:android:cc2eeb4039c11265735058",
         "android_client_info": {
-          "package_name": "com.expenso"
+          "package_name": "com.syforge.expenso"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "427599216265-401tfqnpkv9qn7pgi7otnadnohp55560.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCFNhZnw2awTlL0O9Fz3msnU8akw6VQxCE"
+          "current_key": "AIzaSyD8MyddJeplGkhz185ZLv41x-cSzTGYmXU"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "427599216265-401tfqnpkv9qn7pgi7otnadnohp55560.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

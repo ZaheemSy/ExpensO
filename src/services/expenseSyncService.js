@@ -24,13 +24,19 @@ class ExpenseSyncService {
         googleSheetId: null, // Will be set when synced
         synced: false,
         lastModified: new Date().toISOString(),
+        lastSynced: null,
         transactions: [],
+        syncStatus: 'pending', // 'pending', 'syncing', 'synced', 'error'
       };
 
       // Save locally first
       const sheets = await this.getExpenseSheets();
       sheets.push(newSheet);
       await this.saveExpenseSheets(sheets);
+
+      console.log(
+        '📝 Sheet created locally, queueing for Google Sheets sync...',
+      );
 
       // Queue for sync
       await SyncService.queueOperation('CREATE_SHEET', {
@@ -39,10 +45,13 @@ class ExpenseSyncService {
         sheetId,
       });
 
+      // Update sync status
+      await this.updateSheetSyncStatus(sheetId, 'syncing');
+
       return {
         success: true,
         sheet: newSheet,
-        message: 'Sheet created locally. Will sync when online.',
+        message: 'Sheet created locally. Syncing to Google Sheets...',
       };
     } catch (error) {
       console.error('Error creating expense sheet:', error);
@@ -84,6 +93,27 @@ class ExpenseSyncService {
     return sheets.find(sheet => sheet.id === sheetId) || null;
   }
 
+  async updateSheetSyncStatus(sheetId, status) {
+    try {
+      const sheets = await this.getExpenseSheets();
+      const sheetIndex = sheets.findIndex(s => s.id === sheetId);
+
+      if (sheetIndex !== -1) {
+        sheets[sheetIndex].syncStatus = status;
+
+        if (status === 'synced') {
+          sheets[sheetIndex].synced = true;
+          sheets[sheetIndex].lastSynced = new Date().toISOString();
+        }
+
+        await this.saveExpenseSheets(sheets);
+        console.log(`🔄 Sheet ${sheetId} sync status updated to: ${status}`);
+      }
+    } catch (error) {
+      console.error('Error updating sheet sync status:', error);
+    }
+  }
+
   // Expense Operations
   async addExpense(sheetId, expenseData) {
     try {
@@ -108,6 +138,7 @@ class ExpenseSyncService {
         time: new Date().toLocaleTimeString(),
         createdAt: new Date().toISOString(),
         synced: false,
+        lastSynced: null,
         sheetId,
       };
 
@@ -122,6 +153,14 @@ class ExpenseSyncService {
         };
       }
 
+      // Check if sheet has Google Sheet ID
+      const sheet = sheets[sheetIndex];
+      if (!sheet.googleSheetId) {
+        console.warn(
+          '⚠️ Sheet not yet synced to Google Sheets. Expense will sync when sheet is ready.',
+        );
+      }
+
       // Initialize transactions array if it doesn't exist
       if (!sheets[sheetIndex].transactions) {
         sheets[sheetIndex].transactions = [];
@@ -132,6 +171,10 @@ class ExpenseSyncService {
 
       await this.saveExpenseSheets(sheets);
 
+      console.log(
+        '📝 Expense added locally, queueing for Google Sheets sync...',
+      );
+
       // Add to pending operations for sync
       await SyncService.addPendingExpenseOperation('create', {
         ...expense,
@@ -141,7 +184,9 @@ class ExpenseSyncService {
       return {
         success: true,
         expense,
-        message: 'Expense added locally. Will sync when online.',
+        message: sheet.googleSheetId
+          ? 'Expense added. Syncing to Google Sheets...'
+          : 'Expense added locally. Will sync when sheet is ready.',
       };
     } catch (error) {
       console.error('Error adding expense:', error);
@@ -202,7 +247,7 @@ class ExpenseSyncService {
       return {
         success: true,
         expense: sheets[sheetIndex].transactions[expenseIndex],
-        message: 'Expense updated locally. Will sync when online.',
+        message: 'Expense updated. Syncing to Google Sheets...',
       };
     } catch (error) {
       console.error('Error updating expense:', error);
@@ -253,7 +298,7 @@ class ExpenseSyncService {
 
       return {
         success: true,
-        message: 'Expense deleted locally. Will sync when online.',
+        message: 'Expense deleted. Syncing to Google Sheets...',
       };
     } catch (error) {
       console.error('Error deleting expense:', error);
@@ -323,7 +368,7 @@ class ExpenseSyncService {
       return {
         success: true,
         category: normalizedName,
-        message: 'Category added locally. Will sync when online.',
+        message: 'Category added successfully.',
       };
     } catch (error) {
       console.error('Error adding category:', error);
@@ -407,10 +452,13 @@ class ExpenseSyncService {
     return {
       sheetId,
       sheetName: sheet.name,
+      googleSheetId: sheet.googleSheetId,
+      synced: sheet.synced,
+      syncStatus: sheet.syncStatus,
+      lastSynced: sheet.lastSynced,
       totalExpenses: sheet.transactions?.length || 0,
       unsyncedExpenses: unsyncedExpenses.length,
       lastModified: sheet.lastModified,
-      sheetSynced: sheet.synced,
       overallSyncStatus: syncStatus,
     };
   }
@@ -425,6 +473,15 @@ class ExpenseSyncService {
       };
     }
 
+    // If sheet doesn't have Google Sheet ID, try to create it first
+    if (!sheet.googleSheetId) {
+      await SyncService.queueOperation('CREATE_SHEET', {
+        userEmail: this.userEmail,
+        sheetName: sheet.name,
+        sheetId: sheet.id,
+      });
+    }
+
     // Queue all unsynced expenses for this sheet
     const unsyncedExpenses =
       sheet.transactions?.filter(exp => !exp.synced) || [];
@@ -437,12 +494,49 @@ class ExpenseSyncService {
     }
 
     // Trigger immediate sync
-    await SyncService.manualSync();
+    const syncResult = await SyncService.manualSync();
 
     return {
       success: true,
       message: `Queued ${unsyncedExpenses.length} expenses for sync`,
+      syncResult,
     };
+  }
+
+  // Manual retry for failed sheet sync
+  async retrySheetSync(sheetId) {
+    try {
+      const sheet = await this.getExpenseSheet(sheetId);
+      if (!sheet) {
+        return { success: false, error: 'Sheet not found' };
+      }
+
+      console.log('🔄 Retrying sheet sync:', sheet.name);
+
+      // Update status to syncing
+      await this.updateSheetSyncStatus(sheetId, 'syncing');
+
+      // Re-queue the sheet creation
+      await SyncService.queueOperation('CREATE_SHEET', {
+        userEmail: this.userEmail,
+        sheetName: sheet.name,
+        sheetId: sheet.id,
+      });
+
+      // Trigger sync
+      await SyncService.scheduleSync(500);
+
+      return {
+        success: true,
+        message: 'Sheet sync retry queued',
+      };
+    } catch (error) {
+      console.error('Error retrying sheet sync:', error);
+      return {
+        success: false,
+        error: 'Failed to retry sync',
+      };
+    }
   }
 
   // Cleanup user data

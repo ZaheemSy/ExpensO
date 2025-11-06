@@ -1,4 +1,4 @@
-package com.expenso
+package com.syforge.expenso
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

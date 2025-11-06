@@ -36,16 +36,18 @@ class GoogleOAuthService {
 
       const requiredScopes = [
         'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/drive.file',
       ];
 
-      const hasAllScopes = requiredScopes.every(scope => scopes.includes(scope));
+      const hasAllScopes = requiredScopes.every(scope =>
+        scopes.includes(scope),
+      );
 
       return {
         hasPermissions: hasAllScopes,
         currentScopes: scopes,
         requiredScopes,
-        reason: hasAllScopes ? 'all_granted' : 'insufficient_scopes'
+        reason: hasAllScopes ? 'all_granted' : 'insufficient_scopes',
       };
     } catch (error) {
       console.error('Error checking permissions:', error);
@@ -85,21 +87,20 @@ class GoogleOAuthService {
         return {
           success: true,
           userInfo,
-          message: 'Google Sheets access granted successfully!'
+          message: 'Google Sheets access granted successfully!',
         };
       } else {
         return {
           success: false,
           error: 'Required permissions not granted',
-          details: finalCheck
+          details: finalCheck,
         };
       }
-
     } catch (error) {
       console.error('Error requesting Google Sheets permissions:', error);
       return {
         success: false,
-        error: error.message || 'Failed to get Google Sheets permissions'
+        error: error.message || 'Failed to get Google Sheets permissions',
       };
     }
   }
@@ -109,7 +110,10 @@ class GoogleOAuthService {
       await AsyncStorage.setItem('google_user_info', JSON.stringify(userInfo));
       await AsyncStorage.setItem('google_access_token', userInfo.accessToken);
       await AsyncStorage.setItem('google_sheets_permissions_granted', 'true');
-      await AsyncStorage.setItem('google_permissions_timestamp', Date.now().toString());
+      await AsyncStorage.setItem(
+        'google_permissions_timestamp',
+        Date.now().toString(),
+      );
     } catch (error) {
       console.error('Error storing user credentials:', error);
     }
@@ -150,8 +154,12 @@ class GoogleOAuthService {
 
   async hasValidPermissions() {
     try {
-      const permissionsGranted = await AsyncStorage.getItem('google_sheets_permissions_granted');
-      const timestamp = await AsyncStorage.getItem('google_permissions_timestamp');
+      const permissionsGranted = await AsyncStorage.getItem(
+        'google_sheets_permissions_granted',
+      );
+      const timestamp = await AsyncStorage.getItem(
+        'google_permissions_timestamp',
+      );
 
       if (permissionsGranted !== 'true') {
         return false;

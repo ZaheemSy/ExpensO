@@ -1,5 +1,7 @@
 import NetworkService from './networkService';
 import StorageUtils from '../utils/storageUtils';
+import GoogleSheetsSyncService from './googleSheetsSyncService';
+import ExpenseSyncService from './expenseSyncService';
 
 class SyncService {
   constructor() {
@@ -325,89 +327,206 @@ class SyncService {
     }, retryDelay);
   }
 
-  // Specific sync operations (to be implemented with your actual API calls)
+  // ============ ACTUAL GOOGLE SHEETS SYNC IMPLEMENTATIONS ============
+
   async syncCreateSheet(sheetData) {
     try {
-      console.log('Syncing sheet creation:', sheetData);
-      // TODO: Implement your Google Sheets API call here
-      // const result = await sheetsService.createExpenseSheet(sheetData.userEmail);
-      // return result.success;
+      console.log('✅ Syncing sheet creation to Google Sheets:', sheetData);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Create spreadsheet in Google Sheets
+      const result = await GoogleSheetsSyncService.createSpreadsheet(
+        sheetData.sheetName,
+        sheetData.userEmail,
+      );
 
-      // For now, simulate success
-      return true;
+      if (result.success && result.spreadsheetId) {
+        // Update local sheet with Google Sheet ID
+        await this.updateLocalSheetWithGoogleId(
+          sheetData.sheetId,
+          result.spreadsheetId,
+        );
+
+        console.log(
+          '✅ Sheet successfully synced to Google Sheets:',
+          result.spreadsheetId,
+        );
+        return true;
+      }
+
+      console.error('❌ Failed to create Google Sheet:', result.error);
+      return false;
     } catch (error) {
-      console.error('Error syncing sheet creation:', error);
+      console.error('❌ Error syncing sheet creation:', error);
       return false;
     }
   }
 
   async syncAddExpense(expenseData) {
     try {
-      console.log('Syncing expense addition:', expenseData);
-      // TODO: Implement your expense sync to Google Sheets
-      // const result = await sheetsService.addExpense(expenseData);
-      // return result.success;
+      console.log('✅ Syncing expense addition to Google Sheets:', expenseData);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Get the Google Sheet ID from the sheet
+      const sheet = expenseData.sheet;
 
-      // For now, simulate success
-      return true;
+      if (!sheet || !sheet.googleSheetId) {
+        console.error('❌ No Google Sheet ID found for expense');
+        return false;
+      }
+
+      const result = await GoogleSheetsSyncService.addExpenseToSheet(
+        sheet.googleSheetId,
+        expenseData,
+        sheet.name,
+      );
+
+      if (result.success) {
+        // Mark expense as synced locally
+        await this.markExpenseAsSynced(expenseData.sheetId, expenseData.id);
+        console.log('✅ Expense successfully synced to Google Sheets');
+        return true;
+      }
+
+      console.error('❌ Failed to add expense to Google Sheet:', result.error);
+      return false;
     } catch (error) {
-      console.error('Error syncing expense addition:', error);
+      console.error('❌ Error syncing expense addition:', error);
       return false;
     }
   }
 
   async syncUpdateExpense(expenseData) {
     try {
-      console.log('Syncing expense update:', expenseData);
-      // TODO: Implement update logic
+      console.log('✅ Syncing expense update to Google Sheets:', expenseData);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 600));
+      // For now, we'll implement update as delete + create
+      // You can enhance this later with proper row update logic
 
-      return true;
+      const sheet = expenseData.sheet;
+      if (!sheet || !sheet.googleSheetId) {
+        console.error('❌ No Google Sheet ID found for expense update');
+        return false;
+      }
+
+      // Add updated expense as new row
+      const result = await GoogleSheetsSyncService.addExpenseToSheet(
+        sheet.googleSheetId,
+        expenseData.updates,
+        sheet.name,
+      );
+
+      if (result.success) {
+        console.log('✅ Expense update synced to Google Sheets');
+        return true;
+      }
+
+      return false;
     } catch (error) {
-      console.error('Error syncing expense update:', error);
+      console.error('❌ Error syncing expense update:', error);
       return false;
     }
   }
 
   async syncDeleteExpense(expenseData) {
     try {
-      console.log('Syncing expense deletion:', expenseData);
-      // TODO: Implement delete logic
+      console.log('✅ Syncing expense deletion to Google Sheets:', expenseData);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // For delete, we'll just mark it as deleted in comments
+      // Full row deletion requires more complex Google Sheets API calls
 
-      return true;
+      const sheet = expenseData.sheet;
+      if (!sheet || !sheet.googleSheetId) {
+        console.error('❌ No Google Sheet ID found for expense deletion');
+        return false;
+      }
+
+      // Add a "DELETED" note row
+      const deletedNote = {
+        ...expenseData.deletedExpense,
+        purpose: `[DELETED] ${expenseData.deletedExpense.purpose}`,
+        amount: 0,
+      };
+
+      const result = await GoogleSheetsSyncService.addExpenseToSheet(
+        sheet.googleSheetId,
+        deletedNote,
+        sheet.name,
+      );
+
+      if (result.success) {
+        console.log('✅ Expense deletion synced to Google Sheets');
+        return true;
+      }
+
+      return false;
     } catch (error) {
-      console.error('Error syncing expense deletion:', error);
+      console.error('❌ Error syncing expense deletion:', error);
       return false;
     }
   }
 
   async syncCreateCategory(categoryData) {
     try {
-      console.log('Syncing category creation:', categoryData);
-      // TODO: Implement category sync logic
+      console.log('✅ Category creation logged:', categoryData);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 400));
+      // Categories are stored locally only for now
+      // You can optionally sync them to a separate Google Sheet
 
       return true;
     } catch (error) {
-      console.error('Error syncing category creation:', error);
+      console.error('❌ Error syncing category creation:', error);
       return false;
     }
   }
 
-  // Public API for adding operations to sync queue
+  // ============ HELPER METHODS ============
+
+  async updateLocalSheetWithGoogleId(localSheetId, googleSheetId) {
+    try {
+      const sheets = await ExpenseSyncService.getExpenseSheets();
+      const sheetIndex = sheets.findIndex(s => s.id === localSheetId);
+
+      if (sheetIndex !== -1) {
+        sheets[sheetIndex].googleSheetId = googleSheetId;
+        sheets[sheetIndex].synced = true;
+        sheets[sheetIndex].lastSynced = new Date().toISOString();
+
+        await ExpenseSyncService.saveExpenseSheets(sheets);
+        console.log(
+          '✅ Local sheet updated with Google Sheet ID:',
+          googleSheetId,
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error updating local sheet with Google ID:', error);
+    }
+  }
+
+  async markExpenseAsSynced(sheetId, expenseId) {
+    try {
+      const sheets = await ExpenseSyncService.getExpenseSheets();
+      const sheetIndex = sheets.findIndex(s => s.id === sheetId);
+
+      if (sheetIndex !== -1 && sheets[sheetIndex].transactions) {
+        const expenseIndex = sheets[sheetIndex].transactions.findIndex(
+          e => e.id === expenseId,
+        );
+
+        if (expenseIndex !== -1) {
+          sheets[sheetIndex].transactions[expenseIndex].synced = true;
+          sheets[sheetIndex].transactions[expenseIndex].lastSynced =
+            new Date().toISOString();
+
+          await ExpenseSyncService.saveExpenseSheets(sheets);
+          console.log('✅ Expense marked as synced:', expenseId);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error marking expense as synced:', error);
+    }
+  }
+
+  // ============ PUBLIC API ============
+
   async queueOperation(type, data) {
     const operationId = await StorageUtils.addToSyncQueue({
       type,
@@ -415,7 +534,7 @@ class SyncService {
       timestamp: Date.now(),
     });
 
-    console.log(`Queued operation: ${type} (ID: ${operationId})`);
+    console.log(`📋 Queued operation: ${type} (ID: ${operationId})`);
 
     // Trigger sync if online
     if (NetworkService.isOnline()) {
@@ -438,12 +557,12 @@ class SyncService {
     );
 
     console.log(
-      `Queued pending expense operation: ${operationType} (ID: ${operationId})`,
+      `📋 Queued pending expense operation: ${operationType} (ID: ${operationId})`,
     );
 
     // Trigger sync if online
     if (NetworkService.isOnline()) {
-      this.scheduleSync(1000); // Shorter delay for new operations
+      this.scheduleSync(1000);
     }
 
     this.notifySyncListeners('expense_operation_queued', {
@@ -455,25 +574,23 @@ class SyncService {
     return operationId;
   }
 
-  // Manual sync trigger
   async manualSync() {
     if (this.isSyncing) {
       return { success: false, message: 'Sync already in progress' };
     }
 
     try {
-      console.log('Manual sync triggered by user');
+      console.log('🔄 Manual sync triggered by user');
       this.notifySyncListeners('manual_sync_triggered');
 
       await this.syncAll();
       return { success: true, message: 'Manual sync completed' };
     } catch (error) {
-      console.error('Manual sync failed:', error);
+      console.error('❌ Manual sync failed:', error);
       return { success: false, message: error.message };
     }
   }
 
-  // Get sync status
   async getSyncStatus() {
     const [unsyncedData, lastSync] = await Promise.all([
       StorageUtils.getUnsyncedData(),
@@ -493,7 +610,6 @@ class SyncService {
     return status;
   }
 
-  // Check if there are any unsynced operations
   async hasUnsyncedData() {
     const unsyncedData = await StorageUtils.getUnsyncedData();
     return (
@@ -502,17 +618,15 @@ class SyncService {
     );
   }
 
-  // Clear all sync data (for testing/debugging)
   async clearAllSyncData() {
     await StorageUtils.clearSyncQueue();
     await StorageUtils.storeData(StorageUtils.PENDING_OPERATIONS_KEY, []);
     await StorageUtils.removeData(StorageUtils.LAST_SYNC_TIMESTAMP_KEY);
 
-    console.log('All sync data cleared');
+    console.log('🗑️ All sync data cleared');
     this.notifySyncListeners('sync_data_cleared');
   }
 
-  // Cleanup
   destroy() {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
