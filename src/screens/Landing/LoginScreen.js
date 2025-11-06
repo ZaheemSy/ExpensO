@@ -27,8 +27,9 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isFocused, setIsFocused] = useState({ email: false, password: false });
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -93,6 +94,21 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Error', 'An unexpected error occurred during login.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    try {
+      const result = await loginWithGoogle();
+      if (!result.success) {
+        Alert.alert('Error', result.error || 'Google login failed');
+      }
+    } catch (error) {
+      console.error('Google login error:', error);
+      Alert.alert('Error', 'An unexpected error occurred during Google login.');
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -244,16 +260,21 @@ const LoginScreen = ({ navigation }) => {
             {/* Social Login Options */}
             <View style={styles.socialContainer}>
               <TouchableOpacity
-                style={styles.socialButton}
-                onPress={() => {
-                  Alert.alert(
-                    'Coming Soon',
-                    'Google login will be available in the next update',
-                  );
-                }}
+                style={[
+                  styles.socialButton,
+                  isGoogleLoading && styles.socialButtonDisabled,
+                ]}
+                onPress={handleGoogleLogin}
+                disabled={isGoogleLoading}
               >
-                <Icon name="logo-google" size={20} color="#DB4437" />
-                <Text style={styles.socialText}>Google</Text>
+                {isGoogleLoading ? (
+                  <ActivityIndicator size="small" color="#DB4437" />
+                ) : (
+                  <>
+                    <Icon name="logo-google" size={20} color="#DB4437" />
+                    <Text style={styles.socialText}>Google</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -404,37 +425,6 @@ const styles = StyleSheet.create({
   forgotPasswordIcon: {
     marginLeft: 5,
   },
-  loginButton: {
-    backgroundColor: '#00B8D4',
-    borderRadius: 16,
-    width: '100%',
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#00B8D4',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  buttonDisabled: {
-    backgroundColor: 'rgba(0, 184, 212, 0.5)',
-    shadowOpacity: 0.1,
-  },
-  disabledButton: {
-    opacity: 0.7,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loginText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginRight: 8,
-  },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -467,6 +457,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  socialButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   socialText: {
     color: '#fff',

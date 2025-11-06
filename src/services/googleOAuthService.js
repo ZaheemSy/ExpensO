@@ -24,9 +24,20 @@ class GoogleOAuthService {
     }
   }
 
+  // Helper method to check if user is signed in (compatible with v16.0.0)
+  async isSignedIn() {
+    try {
+      const user = await GoogleSignin.getCurrentUser();
+      return user !== null;
+    } catch (error) {
+      console.error('Error checking if signed in:', error);
+      return false;
+    }
+  }
+
   async checkPermissions() {
     try {
-      const isSignedIn = await GoogleSignin.isSignedIn();
+      const isSignedIn = await this.isSignedIn();
       if (!isSignedIn) {
         return { hasPermissions: false, reason: 'not_signed_in' };
       }
@@ -62,7 +73,7 @@ class GoogleOAuthService {
       }
 
       // Check if user is already signed in
-      const isSignedIn = await GoogleSignin.isSignedIn();
+      const isSignedIn = await this.isSignedIn();
 
       if (isSignedIn) {
         // Check if we already have the required permissions
@@ -108,7 +119,13 @@ class GoogleOAuthService {
   async storeUserCredentials(userInfo) {
     try {
       await AsyncStorage.setItem('google_user_info', JSON.stringify(userInfo));
-      await AsyncStorage.setItem('google_access_token', userInfo.accessToken);
+
+      // Handle both new and old API structures
+      const accessToken = userInfo?.serverAuthCode || userInfo?.accessToken;
+      if (accessToken) {
+        await AsyncStorage.setItem('google_access_token', accessToken);
+      }
+
       await AsyncStorage.setItem('google_sheets_permissions_granted', 'true');
       await AsyncStorage.setItem(
         'google_permissions_timestamp',
@@ -121,7 +138,7 @@ class GoogleOAuthService {
 
   async getAccessToken() {
     try {
-      const isSignedIn = await GoogleSignin.isSignedIn();
+      const isSignedIn = await this.isSignedIn();
       if (!isSignedIn) {
         throw new Error('User not signed in to Google');
       }
@@ -141,7 +158,7 @@ class GoogleOAuthService {
 
   async getUserInfo() {
     try {
-      const isSignedIn = await GoogleSignin.isSignedIn();
+      const isSignedIn = await this.isSignedIn();
       if (isSignedIn) {
         return await GoogleSignin.getCurrentUser();
       }

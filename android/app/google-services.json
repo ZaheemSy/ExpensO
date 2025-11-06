@@ -14,7 +14,15 @@
       },
       "oauth_client": [
         {
-          "client_id": "427599216265-401tfqnpkv9qn7pgi7otnadnohp55560.apps.googleusercontent.com",
+          "client_id": "427599216265-p8hikevkh4fu76cho755a0g37le7u8j2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.syforge.expenso",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "427599216265-dlkosgggf10fb2156ekted2qlq1he2t0.apps.googleusercontent.com",
           "client_type": 3
         }
       ],

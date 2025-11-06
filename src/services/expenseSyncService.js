@@ -1,4 +1,3 @@
-import SyncService from './syncService';
 import StorageUtils from '../utils/storageUtils';
 
 class ExpenseSyncService {
@@ -38,8 +37,8 @@ class ExpenseSyncService {
         '📝 Sheet created locally, queueing for Google Sheets sync...',
       );
 
-      // Queue for sync
-      await SyncService.queueOperation('CREATE_SHEET', {
+      // Queue for sync using StorageUtils instead of direct SyncService import
+      await this.queueOperation('CREATE_SHEET', {
         userEmail,
         sheetName: name,
         sheetId,
@@ -176,7 +175,7 @@ class ExpenseSyncService {
       );
 
       // Add to pending operations for sync
-      await SyncService.addPendingExpenseOperation('create', {
+      await this.queueOperation('ADD_EXPENSE', {
         ...expense,
         sheet: sheets[sheetIndex],
       });
@@ -237,7 +236,7 @@ class ExpenseSyncService {
       await this.saveExpenseSheets(sheets);
 
       // Queue for sync
-      await SyncService.addPendingExpenseOperation('update', {
+      await this.queueOperation('UPDATE_EXPENSE', {
         expenseId,
         sheetId,
         updates,
@@ -289,7 +288,7 @@ class ExpenseSyncService {
       await this.saveExpenseSheets(sheets);
 
       // Queue for sync
-      await SyncService.addPendingExpenseOperation('delete', {
+      await this.queueOperation('DELETE_EXPENSE', {
         expenseId,
         sheetId,
         deletedExpense,
@@ -360,7 +359,7 @@ class ExpenseSyncService {
       await this.saveCategories(categories);
 
       // Queue for sync
-      await SyncService.queueOperation('CREATE_CATEGORY', {
+      await this.queueOperation('CREATE_CATEGORY', {
         categoryName: normalizedName,
         userEmail: this.userEmail,
       });
@@ -440,27 +439,36 @@ class ExpenseSyncService {
     return { spent, collected, balance };
   }
 
-  // Sync status for a specific sheet
-  async getSheetSyncStatus(sheetId) {
-    const sheet = await this.getExpenseSheet(sheetId);
-    if (!sheet) return null;
+  // Helper method to queue operations without circular dependency
+  async queueOperation(type, data) {
+    try {
+      const operationId = await StorageUtils.addToSyncQueue({
+        type,
+        data,
+        timestamp: Date.now(),
+      });
 
-    const unsyncedExpenses =
-      sheet.transactions?.filter(exp => !exp.synced) || [];
-    const syncStatus = await SyncService.getSyncStatus();
+      console.log(`📋 Queued operation: ${type} (ID: ${operationId})`);
 
-    return {
-      sheetId,
-      sheetName: sheet.name,
-      googleSheetId: sheet.googleSheetId,
-      synced: sheet.synced,
-      syncStatus: sheet.syncStatus,
-      lastSynced: sheet.lastSynced,
-      totalExpenses: sheet.transactions?.length || 0,
-      unsyncedExpenses: unsyncedExpenses.length,
-      lastModified: sheet.lastModified,
-      overallSyncStatus: syncStatus,
-    };
+      // Trigger sync if online
+      if (require('../utils/networkService').isOnline()) {
+        // Trigger a manual sync after a delay
+        setTimeout(async () => {
+          try {
+            const SyncService = require('./syncService').default;
+            if (SyncService && typeof SyncService.manualSync === 'function') {
+              await SyncService.manualSync();
+            }
+          } catch (error) {
+            console.error('Error triggering manual sync:', error);
+          }
+        }, 1000);
+      }
+
+      return operationId;
+    } catch (error) {
+      console.error('Error queueing operation:', error);
+    }
   }
 
   // Force sync for a specific sheet
@@ -475,7 +483,7 @@ class ExpenseSyncService {
 
     // If sheet doesn't have Google Sheet ID, try to create it first
     if (!sheet.googleSheetId) {
-      await SyncService.queueOperation('CREATE_SHEET', {
+      await this.queueOperation('CREATE_SHEET', {
         userEmail: this.userEmail,
         sheetName: sheet.name,
         sheetId: sheet.id,
@@ -487,19 +495,30 @@ class ExpenseSyncService {
       sheet.transactions?.filter(exp => !exp.synced) || [];
 
     for (const expense of unsyncedExpenses) {
-      await SyncService.addPendingExpenseOperation('create', {
+      await this.queueOperation('ADD_EXPENSE', {
         ...expense,
         sheet,
       });
     }
 
     // Trigger immediate sync
-    const syncResult = await SyncService.manualSync();
+    try {
+      const SyncService = require('./syncService').default;
+      if (SyncService && typeof SyncService.manualSync === 'function') {
+        const syncResult = await SyncService.manualSync();
+        return {
+          success: true,
+          message: `Queued ${unsyncedExpenses.length} expenses for sync`,
+          syncResult,
+        };
+      }
+    } catch (error) {
+      console.error('Error triggering sync:', error);
+    }
 
     return {
       success: true,
       message: `Queued ${unsyncedExpenses.length} expenses for sync`,
-      syncResult,
     };
   }
 
@@ -517,14 +536,11 @@ class ExpenseSyncService {
       await this.updateSheetSyncStatus(sheetId, 'syncing');
 
       // Re-queue the sheet creation
-      await SyncService.queueOperation('CREATE_SHEET', {
+      await this.queueOperation('CREATE_SHEET', {
         userEmail: this.userEmail,
         sheetName: sheet.name,
         sheetId: sheet.id,
       });
-
-      // Trigger sync
-      await SyncService.scheduleSync(500);
 
       return {
         success: true,

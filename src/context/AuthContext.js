@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firebaseEmailService from '../services/firebaseEmailService';
+import firebaseGoogleAuthService from '../services/firebaseGoogleAuthService';
 import ExpenseSyncService from '../services/expenseSyncService';
 import { auth } from '../config/firebase';
 
@@ -88,23 +89,15 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithGoogle = async () => {
     try {
-      // Remove Google login for now since authService is not defined
-      // You can implement this later when you set up Google authentication
-      console.log('Google login not implemented yet');
-      return { success: false, error: 'Google login not available yet' };
-
-      // If you want to implement Google login later, uncomment this:
-      /*
-      const result = await authService.signInWithGoogle();
+      const result = await firebaseGoogleAuthService.signInWithGoogle();
       if (result.success) {
-        setUserEmail(result.userInfo.user.email);
+        setUserEmail(result.user.email);
         setIsAuthenticated(true);
-        ExpenseSyncService.setUserEmail(result.userInfo.user.email);
-        return { success: true, userInfo: result.userInfo };
+        ExpenseSyncService.setUserEmail(result.user.email);
+        return { success: true, userInfo: result.user };
       } else {
-        return { success: false, error: result.message };
+        return { success: false, error: result.error };
       }
-      */
     } catch (error) {
       console.error('Error during Google login:', error);
       return { success: false, error: error.message };
@@ -114,6 +107,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await firebaseEmailService.signOut();
+      await firebaseGoogleAuthService.signOut();
       setIsAuthenticated(false);
       setUserEmail(null);
       ExpenseSyncService.setUserEmail(null);
